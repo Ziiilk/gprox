@@ -17,6 +17,8 @@
 /run.lock
 /settings.lock
 /launch.lock
+/update.lock
+/dist/
 auth.json
 auth.*.json
 credentials.json

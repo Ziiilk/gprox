@@ -227,6 +227,14 @@ async fn shutdown_signal() {
 }
 
 pub async fn start_background(home: &Path, args: StartArgs) -> Result<()> {
+    start_background_with_executable(home, args, &std::env::current_exe()?).await
+}
+
+pub(crate) async fn start_background_with_executable(
+    home: &Path,
+    args: StartArgs,
+    executable: &Path,
+) -> Result<()> {
     let _launch_lock = config::lock(home, "launch.lock")?;
     if let Some(runtime) = read_runtime(home)
         && is_running(&runtime).await
@@ -246,7 +254,7 @@ pub async fn start_background(home: &Path, args: StartArgs) -> Result<()> {
         .create(true)
         .append(true)
         .open(&log_path)?;
-    let mut command = Command::new(std::env::current_exe()?);
+    let mut command = Command::new(executable);
     command
         .arg("--home")
         .arg(home)
@@ -333,6 +341,19 @@ pub async fn stop(home: &Path) -> Result<()> {
         tokio::time::sleep(Duration::from_millis(100)).await;
     }
     bail!("Stop requested, but gprox has not released its lock yet");
+}
+
+pub(crate) async fn running_for_update(home: &Path) -> Result<bool> {
+    if let Some(runtime) = read_runtime(home)
+        && is_running(&runtime).await
+    {
+        return Ok(true);
+    }
+    // An initializing or unreachable process must not be replaced underneath.
+    let _lock = config::lock(home, "run.lock").context(
+        "Proxy is initializing or unreachable; retry update after it is ready or stopped",
+    )?;
+    Ok(false)
 }
 
 pub async fn status(home: &Path) -> Result<()> {

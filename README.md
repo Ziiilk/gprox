@@ -6,7 +6,7 @@ Rust CLI，将本机已登录 ChatGPT 的 Codex CLI 接到带 Bearer Key 的 Ope
 OpenAI SDK / 客户端 → gprox HTTP → codex app-server（stdio JSON-RPC）→ ChatGPT 订阅
 ```
 
-需要安装 Rust 和 Codex CLI，并已执行 `codex login`。本项目使用现有登录，由 Codex 管理凭据刷新；不会读取或向调用方返回 Codex 的 OAuth Token。调用消耗现有订阅额度，代理 Key 只对本代理有效。
+需要安装 Codex CLI，并已执行 `codex login`；从源码安装还需要 Rust，下载 Release 程序无需 Rust。本项目使用现有登录，由 Codex 管理凭据刷新；不会读取或向调用方返回 Codex 的 OAuth Token。调用消耗现有订阅额度，代理 Key 只对本代理有效。
 
 ## 安装与启动
 
@@ -21,6 +21,9 @@ gprox service stop          # 关闭后台代理
 gprox status                # 查看地址和进程状态
 gprox service status        # 同上
 gprox key                   # 显示本地代理 API Key
+gprox version --json        # 机器可读版本信息
+gprox update --check        # 只检查最新正式版本
+gprox update                # 下载、验证并替换当前可执行文件
 ```
 
 安装后的程序在 `%USERPROFILE%\.cargo\bin\gprox.exe`。若终端尚未更新 PATH，可使用这个完整路径，或直接使用构建后的 `target\release\gprox.exe`。
@@ -50,6 +53,64 @@ gprox start --codex 'C:\path\to\codex.exe'
 | `workspace/` | Codex 临时会话工作目录 |
 
 修改 Key：停止代理，编辑 `config.json` 中的 `api_key`（至少 32 个无空白 ASCII 字符），再启动。妥善保护状态目录；Windows 继承目录 ACL，Unix 目录权限为 `0700`，凭据文件为 `0600`。
+
+## 更新与发布
+
+发布与自动更新支持 **Windows x64 MSVC**。
+
+```powershell
+gprox --version
+gprox version --json
+gprox update --check
+gprox update
+```
+
+`update` 查询 `Ziiilk/gprox` 最新正式 GitHub Release，只升级到更高的稳定版本，不安装预发布版或降级。默认匿名访问 GitHub API；收到 403/429 时，才临时调用 `gh auth token --hostname github.com` 重试，不保存或打印 GitHub Token。未发布任何 Release 时，会明确提示并正常退出。
+
+更新先下载 Windows ZIP 和 `SHA256SUMS`，校验 ZIP 哈希、解压并核对程序的 `--version`，然后替换正在执行的 `gprox` 文件。不会更新源码目录。网络、哈希或版本校验失败时，现有程序和代理继续保留。这里的 SHA-256 校验用于检测下载损坏及打包错误，并非独立的发布者签名。
+
+若当前 `--home` 对应的代理正在运行，安装时会短暂停止，并通过原安装路径恢复为后台进程；活动请求会被取消。替换失败时也会尝试恢复代理。原来未启动的代理保持停止。其他 `--home` 实例不自动重启；配置、代理 Key 和 Codex 登录保持不变。`--check` 不下载、不停止代理，也不创建本地状态目录。
+
+版本约定：
+
+- `Cargo.toml` 的 `[package].version` 是唯一版本来源，格式为 `MAJOR.MINOR.PATCH`；`Cargo.lock` 中的 gprox 版本必须同步。
+- CLI 的 `--version`、`version --json` 直接读取编译时 Cargo 版本，不维护额外常量。
+- 日常修复递增 patch；功能阶段升级递增 minor 并归零 patch；重大不兼容升级递增 major 并归零 minor/patch。当前 `0.x` 阶段不承诺跨 minor 兼容。
+- 发布标签使用轻量 tag `vX.Y.Z`，必须与 Cargo 两处版本完全一致；不覆盖已有 tag。
+
+维护者操作（PowerShell 7）：
+
+```powershell
+# 默认 patch；同时修改 Cargo.toml 与 Cargo.lock，预览不写文件
+pwsh -File scripts/bump-version.ps1 -Part patch -DryRun
+pwsh -File scripts/bump-version.ps1 -Part patch
+# 也支持 -Part minor、-Part major，或 -Version 0.2.0
+
+pwsh -File scripts/check-version.ps1
+cargo fmt --check
+cargo test --all-targets --locked
+cargo clippy --all-targets --locked -- -D warnings
+
+# 本地验证发布包；ZIP 根目录只包含 gprox.exe、LICENSE、README.md
+pwsh -File scripts/package-release.ps1
+
+# 提交本轮发布变更后：检查、创建 tag、推送 tag
+git add Cargo.toml Cargo.lock
+git commit -m 'chore: 更新发布版本'
+pwsh -File scripts/tag-release.ps1 -DryRun
+pwsh -File scripts/tag-release.ps1 -Push
+```
+
+发版前应将本轮全部代码和工作流一并提交；`tag-release.ps1` 要求工作区干净。首次发版可直接使用当前尚未发布的 `0.1.0`，无须先递增。脚本默认只创建本地 tag；只有显式传入 `-Push` 才会推送到 `origin`。若先创建了本地 tag，之后可运行 `git push origin refs/tags/vX.Y.Z`。
+
+推送 `v*` tag 会触发 `.github/workflows/release.yml`：验证 tag/Cargo 版本 → 格式、测试、Clippy → Windows release 构建 → ZIP 与 SHA-256 清单 → GitHub Release 和自动生成的说明。发布使用 GitHub Actions 自带的 `GITHUB_TOKEN`，无需将个人 Token 放入仓库。打包脚本会映射编译时的用户目录和项目绝对路径，避免程序中的错误位置带出本机路径。打包产物位于被 Git 忽略的 `dist/`：
+
+```text
+gprox-x86_64-pc-windows-msvc.zip
+SHA256SUMS
+```
+
+也可从 [Releases](https://github.com/Ziiilk/gprox/releases) 手动下载；manifest 包含与这些附件名称一致的 cargo-binstall 元数据。仓库目前未配置 crates.io 发布，源码安装继续使用 `cargo install --git https://github.com/Ziiilk/gprox --locked`。
 
 ## OpenAI SDK 示例
 

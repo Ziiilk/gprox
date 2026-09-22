@@ -3,6 +3,7 @@ mod backend;
 mod config;
 mod process;
 mod service;
+mod update;
 
 use anyhow::Result;
 use clap::{Args, Parser, Subcommand};
@@ -33,6 +34,17 @@ enum Command {
     Status,
     /// Print the proxy API key (creates credentials on first use)
     Key,
+    /// Update this executable from the latest stable GitHub release
+    Update {
+        /// Check for a new release without downloading or changing anything
+        #[arg(long)]
+        check: bool,
+    },
+    /// Show package version information
+    Version {
+        #[arg(long)]
+        json: bool,
+    },
 }
 
 #[derive(Subcommand)]
@@ -63,6 +75,13 @@ struct StartArgs {
 #[tokio::main]
 async fn main() -> Result<()> {
     let cli = Cli::parse();
+    if let Command::Update { check } = cli.command {
+        return update::execute(cli.home, check).await;
+    }
+    if let Command::Version { json } = cli.command {
+        update::print_version(json);
+        return Ok(());
+    }
     let home = config::home(cli.home)?;
     match cli.command {
         Command::Start(args) => service::run(home, args).await,
@@ -82,5 +101,6 @@ async fn main() -> Result<()> {
             println!("{}", config::Settings::load(&home)?.api_key);
             Ok(())
         }
+        Command::Update { .. } | Command::Version { .. } => unreachable!(),
     }
 }
