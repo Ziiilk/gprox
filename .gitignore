@@ -1,0 +1,53 @@
+# Rust build output contains binaries, debug symbols and absolute source paths.
+/target/
+*.pdb
+*.dmp
+
+# Generated protocol schemas and local acceptance-test state.
+/.gprox-schema/
+/.test-*/
+
+# gprox/Codex state, including keys, OAuth sessions and management credentials.
+# Covers an accidental `gprox --home . start` in the repository root.
+/.gprox/
+/.codex/
+/config.json
+/runtime.json
+/workspace/
+/run.lock
+/settings.lock
+/launch.lock
+auth.json
+auth.*.json
+credentials.json
+credentials.*.json
+secrets.json
+secrets.*.json
+*.local.json
+*.local.toml
+
+# Local environment files; sanitized examples may be committed.
+.env
+.env.*
+!.env.example
+!.env.sample
+!.env.template
+
+# Private keys and certificate stores.
+*.key
+*.pem
+*.p12
+*.pfx
+*.jks
+
+# Logs and editor/OS state.
+*.log
+/.idea/
+/.vscode/
+.DS_Store
+Thumbs.db
+Desktop.ini
+*.swp
+*.swo
+
+# Cargo.lock is intentionally tracked for reproducible CLI builds.
